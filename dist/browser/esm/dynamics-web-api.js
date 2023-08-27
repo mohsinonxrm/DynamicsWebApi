@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-/*! dynamics-web-api v2.0.1 (c) 2023 Aleksandr Rogov */
-=======
 /*! dynamics-web-api v2.1.0 (c) 2023 Aleksandr Rogov */
->>>>>>> master
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
