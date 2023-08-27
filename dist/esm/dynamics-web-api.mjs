@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 /*! dynamics-web-api v2.0.1 (c) 2023 Aleksandr Rogov */
+=======
+/*! dynamics-web-api v2.1.0 (c) 2023 Aleksandr Rogov */
+>>>>>>> master
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -92,7 +96,7 @@ var init_Utility = __esm({
           for (var i = 1; i <= parameterNames.length; i++) {
             const parameterName = parameterNames[i - 1];
             let value = parameters[parameterName];
-            if (value === null)
+            if (value == null)
               continue;
             if (typeof value === "string" && !value.startsWith("Microsoft.Dynamics.CRM") && !isUuid(value)) {
               value = "'" + value + "'";
@@ -106,7 +110,9 @@ var init_Utility = __esm({
             functionParameters += parameterName + "=@p" + i;
             urlQuery += "@p" + i + "=" + (extractUuid(value) || value);
           }
-          return "(" + functionParameters + ")?" + urlQuery;
+          if (urlQuery)
+            urlQuery = "?" + urlQuery;
+          return "(" + functionParameters + ")" + urlQuery;
         } else {
           return "()";
         }
@@ -821,7 +827,7 @@ init_Utility();
 init_ErrorHelper();
 var getApiUrl = (serverUrl, apiConfig) => {
   if (Utility.isRunningWithinPortals()) {
-    return `/_api/`;
+    return `${global.window.location.origin}/_api/`;
   } else {
     if (!serverUrl)
       serverUrl = Utility.getClientUrl();
@@ -877,6 +883,9 @@ var ConfigurationUtility = class {
     if (config == null ? void 0 : config.useEntityNames) {
       ErrorHelper.boolParameterCheck(config.useEntityNames, "DynamicsWebApi.setConfig", "config.useEntityNames");
       internalConfig.useEntityNames = config.useEntityNames;
+    }
+    if (config == null ? void 0 : config.headers) {
+      internalConfig.headers = config.headers;
     }
     if (config == null ? void 0 : config.proxy) {
       ErrorHelper.parameterCheck(config.proxy, "DynamicsWebApi.setConfig", "config.proxy");
@@ -1133,7 +1142,7 @@ var _RequestUtility = class {
     return !queryArray.length ? url2 : url2 + "?" + queryArray.join(joinSymbol);
   }
   static composeHeaders(request, config) {
-    const headers = {};
+    const headers = { ...config.headers, ...request.userHeaders };
     const prefer = _RequestUtility.composePreferHeader(request, config);
     if (prefer.length) {
       headers["Prefer"] = prefer;
@@ -1329,7 +1338,7 @@ ${_RequestUtility.processData(internalRequest.data, config)}`);
     }
     batchBody.push(`
 --${batchBoundary}--`);
-    const headers = _RequestUtility.setStandardHeaders();
+    const headers = _RequestUtility.setStandardHeaders(batchRequest == null ? void 0 : batchRequest.userHeaders);
     headers["Content-Type"] = `multipart/mixed;boundary=${batchBoundary}`;
     return { headers, body: batchBody.join("\n") };
   }
@@ -1348,7 +1357,7 @@ ${_RequestUtility.processData(internalRequest.data, config)}`);
     return collectionName;
   }
   static processData(data, config) {
-    let stringifiedData;
+    let stringifiedData = null;
     if (data) {
       if (data instanceof Uint8Array || data instanceof Uint16Array || data instanceof Uint32Array)
         return data;
@@ -1384,7 +1393,7 @@ ${_RequestUtility.processData(internalRequest.data, config)}`);
         return value;
       });
       stringifiedData = stringifiedData.replace(/[\u007F-\uFFFF]/g, function(chr) {
-        return "\\u" + ("0000" + chr.charCodeAt(0).toString(16)).substr(-4);
+        return "\\u" + ("0000" + chr.charCodeAt(0).toString(16)).slice(-4);
       });
     }
     return stringifiedData;
@@ -1392,9 +1401,14 @@ ${_RequestUtility.processData(internalRequest.data, config)}`);
   static setStandardHeaders(headers = {}) {
     if (!headers["Accept"])
       headers["Accept"] = "application/json";
-    headers["OData-MaxVersion"] = "4.0";
-    headers["OData-Version"] = "4.0";
-    headers["Content-Type"] = headers["Content-Range"] ? "application/octet-stream" : "application/json; charset=utf-8";
+    if (!headers["OData-MaxVersion"])
+      headers["OData-MaxVersion"] = "4.0";
+    if (!headers["OData-Version"])
+      headers["OData-Version"] = "4.0";
+    if (headers["Content-Range"])
+      headers["Content-Type"] = "application/octet-stream";
+    else if (!headers["Content-Type"])
+      headers["Content-Type"] = "application/json; charset=utf-8";
     return headers;
   }
 };
@@ -1449,12 +1463,13 @@ var RequestClient = class {
    * @param {InternalConfig} config - DynamicsWebApi config.
    */
   static async sendRequest(request, config) {
+    var _a2;
     request.headers = request.headers || {};
     request.responseParameters = request.responseParameters || {};
     request.requestId = request.requestId || Utility.generateUUID();
     _addResponseParams(request.requestId, request.responseParameters);
     let processedData = null;
-    const isBatchConverted = request.responseParameters != null && request.responseParameters.convertedToBatch;
+    const isBatchConverted = (_a2 = request.responseParameters) == null ? void 0 : _a2.convertedToBatch;
     if (request.path === "$batch" && !isBatchConverted) {
       const batchRequest = _batchRequestCollection[request.requestId];
       if (!batchRequest)
@@ -1481,10 +1496,10 @@ var RequestClient = class {
         throw new Error("Token is empty. Request is aborted.");
     }
     if (token) {
-      if (!request.headers) {
-        request.headers = {};
-      }
       request.headers["Authorization"] = "Bearer " + (token.hasOwnProperty("accessToken") ? token.accessToken : token);
+    }
+    if (Utility.isRunningWithinPortals()) {
+      request.headers["__RequestVerificationToken"] = await global.window.shell.getTokenDeferred();
     }
     const url2 = request.apiConfig ? request.apiConfig.url : config.dataApi.url;
     return await executeRequest2({
@@ -1514,16 +1529,12 @@ var RequestClient = class {
       },
       config
     );
-    try {
-      const result = await _runRequest(request, config);
-      RequestUtility.entityNames = {};
-      for (let i = 0; i < result.data.value.length; i++) {
-        RequestUtility.entityNames[result.data.value[i].LogicalName] = result.data.value[i].EntitySetName;
-      }
-      return RequestUtility.findCollectionName(entityName) || entityName;
-    } catch (error) {
-      throw new Error("Unable to fetch EntityDefinitions. Error: " + error.message);
+    const result = await _runRequest(request, config);
+    RequestUtility.entityNames = {};
+    for (let i = 0; i < result.data.value.length; i++) {
+      RequestUtility.entityNames[result.data.value[i].LogicalName] = result.data.value[i].EntitySetName;
     }
+    return RequestUtility.findCollectionName(entityName) || entityName;
   }
   static _isEntityNameException(entityName) {
     const exceptions = [
@@ -1554,22 +1565,24 @@ var RequestClient = class {
   }
   static async makeRequest(request, config) {
     request.responseParameters = request.responseParameters || {};
+    request.userHeaders = request.headers;
+    delete request.headers;
     if (!request.isBatch) {
       const collectionName = await RequestClient._checkCollectionName(request.collection, config);
       request.collection = collectionName;
-      request = RequestUtility.compose(request, config);
+      RequestUtility.compose(request, config);
       request.responseParameters.convertedToBatch = false;
       if (request.path.length > 2e3) {
         const batchRequest = RequestUtility.convertToBatch([request], config);
         request.method = "POST";
         request.path = "$batch";
         request.data = batchRequest.body;
-        request.headers = batchRequest.headers;
+        request.headers = { ...batchRequest.headers, ...request.userHeaders };
         request.responseParameters.convertedToBatch = true;
       }
       return _runRequest(request, config);
     }
-    request = RequestUtility.compose(request, config);
+    RequestUtility.compose(request, config);
     _addResponseParams(request.requestId, request.responseParameters);
     _addRequestToBatchCollection(request.requestId, request);
   }

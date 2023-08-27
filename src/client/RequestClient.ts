@@ -56,7 +56,7 @@ export class RequestClient {
         //stringify passed data
         let processedData = null;
 
-        const isBatchConverted = request.responseParameters != null && request.responseParameters.convertedToBatch;
+        const isBatchConverted = request.responseParameters?.convertedToBatch;
 
         if (request.path === "$batch" && !isBatchConverted) {
             const batchRequest = _batchRequestCollection[request.requestId];
@@ -76,12 +76,12 @@ export class RequestClient {
             if (!isBatchConverted) request.headers = RequestUtility.setStandardHeaders(request.headers);
         }
 
-        if (config.impersonate && !request.headers["MSCRMCallerID"]) {
-            request.headers["MSCRMCallerID"] = config.impersonate;
+        if (config.impersonate && !request.headers!["MSCRMCallerID"]) {
+            request.headers!["MSCRMCallerID"] = config.impersonate;
         }
 
-        if (config.impersonateAAD && !request.headers["CallerObjectId"]) {
-            request.headers["CallerObjectId"] = config.impersonateAAD;
+        if (config.impersonateAAD && !request.headers!["CallerObjectId"]) {
+            request.headers!["CallerObjectId"] = config.impersonateAAD;
         }
 
         let token: AccessToken | string | null = null;
@@ -93,10 +93,11 @@ export class RequestClient {
         }
 
         if (token) {
-            if (!request.headers) {
-                request.headers = {};
-            }
-            request.headers["Authorization"] = "Bearer " + (token.hasOwnProperty("accessToken") ? (token as AccessToken).accessToken : token);
+            request.headers!["Authorization"] = "Bearer " + (token.hasOwnProperty("accessToken") ? (token as AccessToken).accessToken : token);
+        }
+
+        if (Utility.isRunningWithinPortals()) {
+            request.headers!["__RequestVerificationToken"] = await global.window.shell!.getTokenDeferred();
         }
 
         const url = request.apiConfig ? request.apiConfig.url : config.dataApi.url;
@@ -131,17 +132,13 @@ export class RequestClient {
             config
         );
 
-        try {
-            const result = await _runRequest(request, config);
-            RequestUtility.entityNames = {};
-            for (let i = 0; i < result.data.value.length; i++) {
-                RequestUtility.entityNames[result.data.value[i].LogicalName] = result.data.value[i].EntitySetName;
-            }
-
-            return RequestUtility.findCollectionName(entityName) || entityName;
-        } catch (error: any) {
-            throw new Error("Unable to fetch EntityDefinitions. Error: " + error.message);
+        const result = await _runRequest(request, config);
+        RequestUtility.entityNames = {};
+        for (let i = 0; i < result.data.value.length; i++) {
+            RequestUtility.entityNames[result.data.value[i].LogicalName] = result.data.value[i].EntitySetName;
         }
+
+        return RequestUtility.findCollectionName(entityName) || entityName;
     }
 
     private static _isEntityNameException(entityName: string): boolean {
@@ -179,12 +176,15 @@ export class RequestClient {
 
     static async makeRequest(request: Core.InternalRequest, config: InternalConfig): Promise<Core.WebApiResponse | undefined> {
         request.responseParameters = request.responseParameters || {};
+        //we don't want to mix headers set by the library and by the user
+        request.userHeaders = request.headers;
+        delete request.headers;
 
         if (!request.isBatch) {
             const collectionName = await RequestClient._checkCollectionName(request.collection, config);
 
             request.collection = collectionName;
-            request = RequestUtility.compose(request, config);
+            RequestUtility.compose(request, config);
             request.responseParameters.convertedToBatch = false;
 
             //the URL contains more characters than max possible limit, convert the request to a batch request
@@ -194,7 +194,7 @@ export class RequestClient {
                 request.method = "POST";
                 request.path = "$batch";
                 request.data = batchRequest.body;
-                request.headers = batchRequest.headers;
+                request.headers = { ...batchRequest.headers, ...request.userHeaders };
                 request.responseParameters.convertedToBatch = true;
             }
 
@@ -202,7 +202,7 @@ export class RequestClient {
         }
 
         //no need to make a request to web api if it's a part of batch
-        request = RequestUtility.compose(request, config);
+        RequestUtility.compose(request, config);
         //add response parameters to parse
         _addResponseParams(request.requestId, request.responseParameters);
         _addRequestToBatchCollection(request.requestId, request);
